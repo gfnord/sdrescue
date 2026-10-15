@@ -59,7 +59,8 @@ impl<'a> Input<'a> {
             let mut c = self.cache.borrow_mut();
             if pos < c.start || pos >= c.start.saturating_add(c.data.len() as u64) {
                 let start = pos - pos % BLOCK as u64;
-                c.data.resize(BLOCK, 0);
+                let avail = self.src.size().saturating_sub(start).min(BLOCK as u64);
+                c.data.resize(avail as usize, 0);
                 let n = self.src.read_at(start, &mut c.data).unwrap_or(0);
                 c.data.truncate(n);
                 c.start = start;

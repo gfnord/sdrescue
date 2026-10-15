@@ -332,4 +332,44 @@ mod tests {
             }
         }
     }
+
+    /// Every carver must survive garbage behind its own signatures: random
+    /// bytes, all-0xFF, all-zero, and every truncation of the data.
+    #[test]
+    fn carvers_never_panic_on_garbage() {
+        let carvers = all_carvers();
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u8
+        };
+        for c in &carvers {
+            for sig in c.signatures() {
+                for fill in 0..4u8 {
+                    let mut data: Vec<u8> = (0..8192)
+                        .map(|_| match fill {
+                            0 => 0,
+                            1 => 0xFF,
+                            _ => rnd(),
+                        })
+                        .collect();
+                    data[sig.offset..sig.offset + sig.bytes.len()].copy_from_slice(sig.bytes);
+                    for cut in [0, 1, 4, 8, 12, 27, 64, 200, 513, 4096, 8192] {
+                        let src = MemSource(data[..cut.min(data.len())].to_vec());
+                        let head = &src.0[..src.0.len().min(HEAD_LEN)];
+                        let _ = c.identify(head);
+                        let inp = Input::new(&src);
+                        for limit in [0, 3, 100, 5000, src.size()] {
+                            let limit = limit.min(src.size());
+                            if let Some(r) = c.carve(&inp, 0, limit) {
+                                assert!(r.len <= limit, "{} exceeded its limit", c.name());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
