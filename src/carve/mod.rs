@@ -7,6 +7,7 @@
 pub mod engine;
 pub mod reader;
 
+mod gif;
 mod jpeg;
 mod png;
 
@@ -141,6 +142,7 @@ pub fn all_carvers() -> Vec<Box<dyn Carver>> {
     vec![
         Box::new(jpeg::Jpeg),
         Box::new(png::Png),
+        Box::new(gif::Gif),
     ]
 }
 
