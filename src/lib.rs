@@ -10,6 +10,8 @@
 //! - [`imaging`]: byte-for-byte imaging with bad-sector handling.
 //! - [`commands`]: the subcommands, driven by [`cli`].
 
+#![warn(missing_docs)]
+
 pub mod carve;
 pub mod cli;
 pub mod commands;

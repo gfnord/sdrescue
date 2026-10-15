@@ -78,28 +78,28 @@ pub fn run(a: &CarveArgs, g: &GlobalOpts) -> Result<Outcome> {
     ensure_output_not_on_source(&a.source, &a.out)?;
     let src = open_for_analysis(&a.source, g.force, "carve")?;
     let src = src.as_ref();
-    let ranges = if a.all_space {
-        vec![(0, src.size())]
+    let free = if a.all_space {
+        None
     } else {
-        match free_ranges(src, g) {
-            Some(r) => r,
-            None => {
-                eprintln!(
-                    "note: no usable FAT filesystem, so free space is unknown; scanning the whole source"
-                );
-                vec![(0, src.size())]
-            }
+        let r = free_ranges(src, g);
+        if r.is_none() {
+            eprintln!(
+                "note: no usable FAT filesystem, so free space is unknown; scanning the whole source"
+            );
         }
+        r
     };
+    let free_only = free.is_some();
+    let ranges = free.unwrap_or_else(|| vec![(0, src.size())]);
     let scan_total: u64 = ranges.iter().map(|(a, b)| b - a).sum();
     println!(
         "Scanning {} of {} for file headers{}",
         human_size(scan_total),
         human_size(src.size()),
-        if a.all_space {
-            ""
-        } else {
+        if free_only {
             " (free space only; use --all-space for everything)"
+        } else {
+            ""
         }
     );
     let carvers = all_carvers();

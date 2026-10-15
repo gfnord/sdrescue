@@ -31,8 +31,10 @@ Exit codes: 0 = success, 1 = error, 2 = finished but nothing was found or recove
 #[derive(Debug, Parser)]
 #[command(name = "sdrescue", version, about = ABOUT, long_about = LONG_ABOUT, after_help = EXAMPLES)]
 pub struct Cli {
+    /// Options shared by all commands.
     #[command(flatten)]
     pub global: GlobalOpts,
+    /// The command to run.
     #[command(subcommand)]
     pub command: Command,
 }
@@ -156,6 +158,7 @@ pub struct ListArgs {
     /// Also show existing (not deleted) files.
     #[arg(long)]
     pub all: bool,
+    /// Category filter.
     #[command(flatten)]
     pub filter: TypeFilter,
     /// Print machine-readable JSON instead of a table.
@@ -171,6 +174,7 @@ pub struct UndeleteArgs {
     /// Folder to write recovered files to (must not be on the card).
     #[arg(long, value_name = "DIR")]
     pub out: PathBuf,
+    /// Category filter.
     #[command(flatten)]
     pub filter: TypeFilter,
     /// Also try to recover files whose first cluster was reused (usually garbage).
@@ -186,6 +190,7 @@ pub struct CarveArgs {
     /// Folder to write carved files to (must not be on the card).
     #[arg(long, value_name = "DIR")]
     pub out: PathBuf,
+    /// Category filter.
     #[command(flatten)]
     pub filter: TypeFilter,
     /// Scan the whole source, not just the free (unallocated) clusters.
