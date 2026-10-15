@@ -135,6 +135,43 @@ video data (`mdat`) is often all there. sdrescue carves such files anyway and ad
 note in `report.csv`. See [troubleshooting](troubleshooting.md#recovered-videos-wont-play)
 for repairing them with `untrunc`.
 
+### AVI videos whose header was overwritten
+
+An AVI file is a header (`hdrl`, which gives the codec, frame size, frame rate and
+audio format), followed by `movi`, a plain sequence of chunks:
+
+- `00dc` + size + a video frame (with MJPEG, a complete JPEG),
+- `01wb` + size + a block of audio.
+
+Cameras write the header first. After a reformat, the first new photos go into the
+first clusters, right on top of the old videos' headers, while the frames behind them
+survive.
+
+While pass 1 reads the image, it also looks (at any offset, not only at cluster
+starts) for a `00dc`/`01wb` chunk header followed by another valid chunk header, and
+records one such *hint* per MiB. In pass 2, file headers and hints are handled in
+offset order:
+
+1. A hint that isn't inside a file already carved is followed chunk by chunk to the
+   end of the run. The walk passes over index (`ix00`) and padding (`JUNK`) chunks
+   and stops at the first invalid chunk or the end of the free space.
+2. A JPEG frame that happens to start on a 512-byte boundary is part of the stream
+   and is not carved as a separate photo.
+3. Any other file header found inside the run means newer data overwrote it there,
+   so the stream is cut just before it, and that file is carved normally.
+
+The surviving chunks are then written into a new AVI with a fresh header and index.
+Without a reference video, the header is built from what the data reveals:
+
+- the frame size, from the first JPEG frame's SOF marker,
+- the frame rate, which is assumed (`--avi-fps`),
+- the audio, assumed to be 16-bit PCM. Its sample rate is the standard rate that best
+  matches the amount of audio per frame at that frame rate.
+
+With `--avi-reference`, the header of a real video from the same camera is copied
+instead, with its frame and sample counts updated, and its OpenDML super-index
+(which points into the original file) blanked out.
+
 ## Why imaging first matters
 
 - **A failing card can get worse with every read.** Imaging reads each sector exactly
@@ -159,7 +196,7 @@ for repairing them with `untrunc`.
 | `src/partition.rs` | MBR/GPT parsing and choosing the filesystem |
 | `src/fat/` | boot sector (`bpb.rs`), FAT decoding (`table.rs`), directory entries and LFN (`dir.rs`), directory walk (`mod.rs`) |
 | `src/recover.rs` | status, signature check and contiguous copy for undelete |
-| `src/carve/` | carving engine (`engine.rs`), cached reader, one module per format behind the `Carver` trait |
+| `src/carve/` | carving engine (`engine.rs`), cached reader, one module per format behind the `Carver` trait, and `avistream.rs` for rebuilding AVIs whose header was lost |
 | `src/imaging.rs` | the imaging loop, bad sectors, SHA-256 log and resume |
 | `src/commands/` | the subcommands |
 

@@ -16,7 +16,8 @@ and no network access.
 - **Undeletes files** (`undelete`) with their names, folders and dates.
 - **Carves files** (`carve`) by recognising their content (JPEG, PNG, GIF, HEIC, TIFF and
   RAW, MP4/MOV, AVI, MTS, WMV, MP3, WAV, M4A, OGG/Opus, FLAC, AMR). This still works
-  after the card was reformatted or the folder entries are gone.
+  after the card was reformatted or the folder entries are gone. AVI videos whose
+  header was overwritten are rebuilt into playable files.
 
 ## What it doesn't do
 

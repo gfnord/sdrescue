@@ -340,7 +340,7 @@ offset,length,type,end,truncated,file,note
 | `offset` | Byte offset of the file in the image (also in the file name). |
 | `length` | Bytes written. |
 | `type` | Detected type (extension). |
-| `end` | How the end was found. `structure` means the format's own structure was walked to its end, which is reliable. `next-header` means the format has no reliable end, so the file was cut at the next file header found (or at the size limit). It may have extra bytes at the end, which players and viewers normally ignore. |
+| `end` | How the end was found. `structure` means the format's own structure was walked to its end, which is reliable. `next-header` means the format has no reliable end, so the file was cut at the next file header found (or at the size limit). It may have extra bytes at the end, which players and viewers normally ignore. `rebuilt` means an AVI was rebuilt from frames whose header was lost (see below). |
 | `truncated` | `yes` if the file was cut at the size limit or the end of the image before its real end, so it's probably incomplete. |
 | `file` | Path relative to `--out`. |
 | `note` | Extra information. For example, `no moov box: ...` means a video is missing its index and needs repair (see [troubleshooting](troubleshooting.md)). |
@@ -348,3 +348,50 @@ offset,length,type,end,truncated,file,note
 Carving assumes each file is stored in one piece (unfragmented). That is usually the
 case for photos on a camera card, but not always for long videos. See
 [how it works](how-it-works.md).
+
+### Videos whose header was overwritten (AVI rebuild)
+
+Many cheap cameras, dashcams and kids' cameras record **AVI** files. When such a card
+is reformatted and new photos are taken, the new photos land in the first clusters.
+That is exactly where the deleted videos' headers were. The frames behind the header
+survive, but without the header nothing marks the start of the file, so ordinary
+carving can't see them.
+
+`carve` also looks for these headerless runs of AVI frames (`00dc` video and `01wb`
+audio chunks) anywhere in the scanned space. It rebuilds each one as a new, playable
+AVI:
+
+```
+> sdrescue carve card.img --out carved
+Scanning 476 MB of 481 MB for file headers (free space only; use --all-space for everything)
+Carved 2 file(s) (502 KB) into carved: 2 jpg
+Rebuilt a video whose header was lost: avi/f005139456-rebuilt.avi (1460 frames, MJPEG 1920x1080, 30 fps (assumed), PCM 16000 Hz mono (inferred))
+Rebuilt a video whose header was lost: avi/f116696576-rebuilt.avi (122 frames, MJPEG 1920x1080, 30 fps (assumed), PCM 16000 Hz mono (inferred))
+Report: carved\report.csv
+```
+
+The header has to be recreated:
+
+- **Without `--avi-reference`:**
+  - The video must be **MJPEG**, which is what most cheap cameras use. The frame size
+    is read from the first frame.
+  - The frame rate isn't stored in the frames, so it is **assumed** to be
+    `--avi-fps` (30 by default).
+  - Audio is assumed to be 16-bit PCM. The sample rate is worked out from how much
+    audio there is per frame.
+  - If the video plays too fast or too slow, or the sound is out of sync, run
+    `carve` again with the right `--avi-fps`, for example `--avi-fps 25`.
+- **With `--avi-reference <FILE>`:** the header is copied from a working AVI recorded
+  by the **same camera with the same settings**. Codec, frame size, frame rate and
+  audio format then match exactly, and other codecs (Xvid, H.264 in AVI, ADPCM audio)
+  work too. Record a short clip with the camera onto another card (or after imaging)
+  to get one.
+
+| Option | Meaning |
+|---|---|
+| `--avi-fps <FPS>` | Frame rate assumed for rebuilt AVIs when there is no reference (default `30`). |
+| `--avi-reference <FILE>` | A working AVI from the same camera whose header is reused. |
+
+Rebuilt videos usually miss their first second or two, which was overwritten together
+with the header. A frame that ran into newer data is dropped. Streams of fewer than 16
+frames are ignored. With `--type photo` or `--type audio` this step is skipped.

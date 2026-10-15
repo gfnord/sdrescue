@@ -83,6 +83,23 @@ Other causes:
 - The file was fragmented (see below).
 - MTS (AVCHD) clips play in VLC. Some players need the whole AVCHD folder structure.
 
+### Rebuilt AVI videos (`-rebuilt.avi`)
+
+These are videos whose original header was overwritten. sdrescue had to recreate it
+(see [usage](usage.md#videos-whose-header-was-overwritten-avi-rebuild)).
+
+- **Plays too fast, too slow, or the sound drifts out of sync:** the frame rate was
+  guessed (30 fps). Run `carve` again with the right one, for example
+  `--avi-fps 25`. Better still, give it a working AVI from the same camera with
+  `--avi-reference clip.avi`, which copies the exact settings.
+- **The sound is loud noise:** the camera doesn't record plain PCM audio (for example
+  it uses IMA ADPCM). Use `--avi-reference` with a working video from the camera.
+- **"cannot rebuild it: the video is not MJPEG":** the camera uses another codec.
+  `--avi-reference` is required.
+- **The first second or two is missing:** it was overwritten together with the
+  header, and can't be recovered.
+- Windows' Films & TV app and VLC play MJPEG AVIs. If one player refuses, try VLC.
+
 ## Files come out corrupted
 
 These are typical symptoms:

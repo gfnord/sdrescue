@@ -87,7 +87,8 @@ What the tests cover:
 - **`tests/fat_images.rs`**: FAT12/16/32 images with deleted files in the root and in
   subfolders (with long names), a deleted folder tree, an overwritten file, an
   MBR-partitioned disk, a quick reformat that `list` can't see but `carve` recovers
-  byte for byte, free-space-only carving, `image` with its SHA-256 log, and exit codes.
+  byte for byte, a deleted AVI whose header was overwritten and is rebuilt,
+  free-space-only carving, `image` with its SHA-256 log, and exit codes.
 - **`tests/device_safety.rs`**: `--force` refusal and refusal to write onto the source,
   using fake device names (no hardware is ever opened).
 
@@ -107,7 +108,7 @@ The script makes:
 
 - JPEG (including one with an EXIF thumbnail and one progressive), PNG and GIF with
   Pillow
-- WAV with the Python standard library
+- WAV with the Python standard library, and an MJPEG + PCM AVI (frames from Pillow)
 - MP3, Ogg Vorbis and MP4 with `ffmpeg` if it's available (set `FFMPEG=/path/to/ffmpeg`
   to choose one). Without ffmpeg, it writes minimal but structurally valid files.
 

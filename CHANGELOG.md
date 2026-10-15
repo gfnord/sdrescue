@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `carve` rebuilds AVI videos whose header was overwritten (typical after a
+  reformat on cameras and dashcams that record MJPEG AVI):
+  - headerless `00dc`/`01wb` chunk runs are found at any offset in the scanned space
+  - they are rewritten as `<OUT>/avi/f<offset>-rebuilt.avi` with a new header and index
+  - the header is inferred (MJPEG frame size, `--avi-fps`, PCM sample rate deduced
+    from the audio/video ratio) or copied from `--avi-reference <FILE>`
+  - the report marks these files with end method `rebuilt`
+
+### Changed
+
+- `carve` no longer saves JPEG frames of an AVI stream as separate photos when they
+  happen to start on a 512-byte boundary.
+
 ## [0.1.0] - 2026-10-15
 
 First release.
