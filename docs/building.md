@@ -114,3 +114,17 @@ The script makes:
 
 The integration tests compare carved and undeleted files byte for byte with these
 fixtures. If you regenerate them, run `cargo test` again.
+
+## 6. Publish the website
+
+The project website is the static site in `www/` (plain HTML and CSS, no build step).
+It is hosted on Cloudflare Pages as the project `sdrescue`, with the custom domain
+`sdrescue.nobrega.com.br`. To publish changes:
+
+```
+npx wrangler login            # once
+npx wrangler pages deploy www --project-name sdrescue --branch main
+```
+
+`www/_headers` sets the security headers (a strict Content-Security-Policy; the site
+loads no scripts and nothing from other origins).

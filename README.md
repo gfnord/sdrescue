@@ -5,6 +5,8 @@ with **FAT12, FAT16 or FAT32**, the format most cameras, phones and recorders us
 It's a single small program for Windows (and Linux) with no installer, no adware
 and no network access.
 
+Website: **https://sdrescue.nobrega.com.br** · Downloads: [latest release](https://github.com/gfnord/sdrescue/releases/latest)
+
 ## What it does
 
 - **Copies the card into an image file** (`image`), byte for byte. Unreadable sectors

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sdrescue — recover deleted photos and videos from SD cards</title>
+<meta name="description" content="sdrescue is a free, open-source tool that recovers deleted photos, videos and audio from FAT-formatted SD cards. No installer, no adware, no network access.">
+<link rel="canonical" href="https://sdrescue.nobrega.com.br/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+<meta property="og:title" content="sdrescue — recover deleted photos and videos from SD cards">
+<meta property="og:description" content="Free, open-source recovery of deleted photos, videos and audio from FAT SD cards. Image first, never write to the card.">
+<meta property="og:url" content="https://sdrescue.nobrega.com.br/">
+<meta property="og:type" content="website">
+</head>
+<body>
+<header class="top">
+  <div class="wrap nav">
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" width="28" height="28"> sdrescue</a>
+    <nav>
+      <a href="#download">Download</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#features">Features</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/gfnord/sdrescue">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <h1>Get your deleted photos back.</h1>
+    <p class="lead">sdrescue recovers deleted <strong>photos, videos and audio</strong> from SD cards
+      formatted with FAT12, FAT16 or FAT32, the format used by most cameras, phones, dashcams and
+      recorders. It's one small program: no installer, no adware, no account, no network access.</p>
+    <p class="cta">
+      <a class="button primary" href="https://github.com/gfnord/sdrescue/releases/download/v1.0.0/sdrescue.exe">Download for Windows</a>
+      <a class="button" href="https://github.com/gfnord/sdrescue/releases/tag/v1.0.0">All downloads (v1.0.0)</a>
+    </p>
+    <p class="small">Free and open source (MIT or Apache-2.0). Windows 10/11 and Linux.</p>
+  </div>
+</section>
+
+<section class="warning" id="before-you-start">
+  <div class="wrap">
+    <h2>⚠️ Before you start</h2>
+    <ol class="cards">
+      <li><strong>Stop using the card now.</strong> Don't take new photos and don't copy anything onto it. Every new file can overwrite the ones you want back.</li>
+      <li><strong>Don't let Windows "scan and fix" it.</strong> If Windows offers to scan, repair or format the card, click <em>Cancel</em>.</li>
+      <li><strong>Never save recovered files to the card.</strong> Save them to your PC's drive. sdrescue refuses to write onto the card it reads.</li>
+      <li><strong>Make an image first.</strong> Copy the whole card to a file once, then work on that copy. It's gentler on a failing card and you can retry as often as you like.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="download">
+  <div class="wrap">
+    <h2>Download</h2>
+    <table>
+      <thead><tr><th>File</th><th>For</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://github.com/gfnord/sdrescue/releases/download/v1.0.0/sdrescue.exe"><code>sdrescue.exe</code></a></td><td>Windows 10/11 (64-bit), standalone, about 1.5 MB</td></tr>
+        <tr><td><a href="https://github.com/gfnord/sdrescue/releases/download/v1.0.0/sdrescue-linux-x86_64"><code>sdrescue-linux-x86_64</code></a></td><td>Linux x86-64 (glibc 2.34 or newer)</td></tr>
+        <tr><td><a href="https://github.com/gfnord/sdrescue/releases/download/v1.0.0/SHA256SUMS.txt"><code>SHA256SUMS.txt</code></a></td><td>Checksums to verify your download</td></tr>
+      </tbody>
+    </table>
+    <p class="small">The Windows program isn't code-signed, so SmartScreen may say <em>"Windows protected your PC"</em>.
+      Click <strong>More info</strong> → <strong>Run anyway</strong>. You can check the file with
+      <code>certutil -hashfile sdrescue.exe SHA256</code> and compare it with <code>SHA256SUMS.txt</code>,
+      or build it yourself from the <a href="https://github.com/gfnord/sdrescue">source code</a>.</p>
+  </div>
+</section>
+
+<section id="quick-start">
+  <div class="wrap">
+    <h2>Quick start (Windows)</h2>
+    <ol class="steps">
+      <li>
+        <h3>Open an admin terminal</h3>
+        <p>Click Start, type <code>terminal</code>, right-click <strong>Terminal</strong> and choose
+          <strong>Run as administrator</strong>. Go to the folder where you saved <code>sdrescue.exe</code>:</p>
+        <pre><code>cd C:\Users\&lt;you&gt;\Downloads</code></pre>
+      </li>
+      <li>
+        <h3>Find your card</h3>
+        <pre><code>sdrescue disks</code></pre>
+        <p>Look for the removable drive with the size of your card, and note the physical drive
+          next to it, for example <code>\\.\PhysicalDrive2</code>.</p>
+      </li>
+      <li>
+        <h3>Copy the card into an image</h3>
+        <pre><code>sdrescue image \\.\PhysicalDrive2 card.img</code></pre>
+        <p>This reads the whole card once (about a minute per GB). Afterwards, take the card out and keep it safe.</p>
+      </li>
+      <li>
+        <h3>See what can be recovered</h3>
+        <pre><code>sdrescue list card.img</code></pre>
+        <p><code>good</code> files will most likely come back intact, <code>partial</code> ones may be damaged,
+          <code>overwritten</code> ones are probably lost.</p>
+      </li>
+      <li>
+        <h3>Undelete with names and folders</h3>
+        <pre><code>sdrescue undelete card.img --out recovered</code></pre>
+      </li>
+      <li>
+        <h3>Carve for everything else</h3>
+        <pre><code>sdrescue carve card.img --out carved</code></pre>
+        <p>Finds files by their content, even after the card was formatted. Files get generic
+          names like <code>carved\jpg\f000123456.jpg</code>.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <h2>Features</h2>
+    <div class="grid">
+      <div class="feature">
+        <h3>Safe by design</h3>
+        <p>The card is opened read-only. Analysis commands refuse to run directly on a card unless
+          you insist with <code>--force</code>. Output is never written to the source card, and
+          existing files are never overwritten.</p>
+      </div>
+      <div class="feature">
+        <h3>Careful imaging</h3>
+        <p>Byte-for-byte copy with sector-by-sector retries. Unreadable sectors are filled with
+          zeros and logged. You get a SHA-256 hash, a progress bar with time left, and
+          <code>--resume</code> if the copy is interrupted.</p>
+      </div>
+      <div class="feature">
+        <h3>Real names and folders</h3>
+        <p>Deleted files are found in the FAT directories, including deleted folders. Long file
+          names are rebuilt, and the lost first letter is recovered from the long-name checksum.
+          Dates are restored.</p>
+      </div>
+      <div class="feature">
+        <h3>Honest status</h3>
+        <p>Each file is marked <code>good</code>, <code>partial</code> or <code>overwritten</code>, and
+          its first bytes are checked against the expected file signature. You know what to
+          expect before recovering.</p>
+      </div>
+      <div class="feature">
+        <h3>Works after a format</h3>
+        <p>Carving finds JPEG, PNG, GIF, HEIC, TIFF/CR2, MP4/MOV, AVI, MTS, WMV, MP3, WAV, M4A,
+          OGG/Opus, FLAC and AMR by their content, in free space only by default.</p>
+      </div>
+      <div class="feature">
+        <h3>Rebuilds broken AVI videos</h3>
+        <p>Cameras and dashcams often lose a video's header when the card is reformatted and new
+          photos are taken. sdrescue finds the surviving frames and rebuilds a playable AVI.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>FAQ</h2>
+    <details>
+      <summary>Why does it need administrator rights?</summary>
+      <p>Reading a whole card byte for byte (<code>disks</code>, <code>image</code>) requires
+        raw disk access, which Windows only allows administrators. The other commands work
+        on the image file and don't need it.</p>
+    </details>
+    <details>
+      <summary>My card is exFAT (64 GB or larger). Does it work?</summary>
+      <p><code>list</code> and <code>undelete</code> only understand FAT12/16/32. On exFAT and NTFS cards,
+        use <code>carve</code>, which doesn't need the filesystem.</p>
+    </details>
+    <details>
+      <summary>A recovered photo is half grey, or a video stops partway.</summary>
+      <p>Either that part of the file was overwritten by newer files, or the file was stored in
+        pieces (fragmented). FAT forgets where the pieces were when a file is deleted. Recovery
+        assumes files are stored in one piece, which is usually true on camera cards but not always.</p>
+    </details>
+    <details>
+      <summary>A recovered MP4/MOV video won't play.</summary>
+      <p>Its index (the <code>moov</code> box) is probably missing because the recording was
+        interrupted. The carve report says so. Tools like
+        <a href="https://github.com/anthwlock/untrunc">untrunc</a> can repair it using a working video
+        from the same camera.</p>
+    </details>
+    <details>
+      <summary>Does sdrescue send my data anywhere?</summary>
+      <p>No. It has no network code at all. Everything stays on your computer.</p>
+    </details>
+    <details>
+      <summary>Where is the full documentation?</summary>
+      <p>See the <a href="https://github.com/gfnord/sdrescue/blob/main/docs/usage.md">usage guide</a>,
+        <a href="https://github.com/gfnord/sdrescue/blob/main/docs/how-it-works.md">how it works</a> and
+        <a href="https://github.com/gfnord/sdrescue/blob/main/docs/troubleshooting.md">troubleshooting</a> on GitHub.</p>
+    </details>
+  </div>
+</section>
+
+<section class="disclaimer" id="disclaimer">
+  <div class="wrap">
+    <h2>Open source, no warranty</h2>
+    <p>sdrescue is an <strong>open-source</strong> project, developed in the open on
+      <a href="https://github.com/gfnord/sdrescue">GitHub</a> and licensed under your choice of the
+      <a href="https://github.com/gfnord/sdrescue/blob/main/LICENSE-MIT">MIT</a> or
+      <a href="https://github.com/gfnord/sdrescue/blob/main/LICENSE-APACHE">Apache 2.0</a> license.
+      It is free to use, study, modify and share.</p>
+    <p><strong>It is provided "as is", without warranty of any kind, express or implied.</strong>
+      The authors and contributors accept <strong>no liability whatsoever</strong> for any damage, data loss,
+      or other consequences arising from its use. <strong>You run it at your own risk.</strong>
+      Data recovery is never guaranteed. If your files are irreplaceable or the card is physically
+      damaged, consider a professional data recovery service before trying anything yourself.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>sdrescue v1.0.0 · <a href="https://github.com/gfnord/sdrescue">Source code</a> ·
+      <a href="https://github.com/gfnord/sdrescue/issues">Report a problem</a> ·
+      <a href="https://github.com/gfnord/sdrescue/blob/main/CHANGELOG.md">Changelog</a> ·
+      <a href="#disclaimer">No warranty: use at your own risk</a></p>
+  </div>
+</footer>
+</body>
+</html>
