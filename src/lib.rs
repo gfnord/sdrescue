@@ -16,6 +16,7 @@ pub mod commands;
 pub mod device;
 pub mod fat;
 pub mod filetype;
+pub mod imaging;
 pub mod output;
 pub mod partition;
 pub mod recover;
