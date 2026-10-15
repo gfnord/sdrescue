@@ -11,6 +11,7 @@ mod gif;
 mod isobmff;
 mod jpeg;
 mod mp3;
+mod ogg;
 mod png;
 mod riff;
 
@@ -149,6 +150,7 @@ pub fn all_carvers() -> Vec<Box<dyn Carver>> {
         Box::new(isobmff::IsoBmff),
         Box::new(riff::Riff),
         Box::new(mp3::Mp3),
+        Box::new(ogg::Ogg),
     ]
 }
 
