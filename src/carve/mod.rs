@@ -8,6 +8,7 @@ pub mod engine;
 pub mod reader;
 
 mod jpeg;
+mod png;
 
 use std::fmt;
 
@@ -139,6 +140,7 @@ pub trait Carver: Send + Sync {
 pub fn all_carvers() -> Vec<Box<dyn Carver>> {
     vec![
         Box::new(jpeg::Jpeg),
+        Box::new(png::Png),
     ]
 }
 
