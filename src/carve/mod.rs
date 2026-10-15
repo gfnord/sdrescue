@@ -7,6 +7,7 @@
 pub mod engine;
 pub mod reader;
 
+mod asf;
 mod gif;
 mod isobmff;
 mod jpeg;
@@ -151,6 +152,7 @@ pub fn all_carvers() -> Vec<Box<dyn Carver>> {
         Box::new(riff::Riff),
         Box::new(mp3::Mp3),
         Box::new(ogg::Ogg),
+        Box::new(asf::Asf),
     ]
 }
 
