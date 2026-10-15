@@ -1,0 +1,40 @@
+[package]
+name = "sdrescue"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Recover deleted photos, videos and audio from FAT-formatted SD cards"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["recovery", "undelete", "fat32", "carving", "forensics"]
+categories = ["command-line-utilities", "filesystem"]
+
+[dependencies]
+aho-corasick = "1.1.5"
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+csv = "1.4.0"
+indicatif = "0.18.6"
+memchr = "2.8.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.190"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_SystemInformation",
+    "Win32_System_Time",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
