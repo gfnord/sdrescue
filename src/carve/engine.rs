@@ -6,9 +6,13 @@
 //! Pass 2 visits the candidates in offset order, skips those inside a file
 //! already carved, and asks the carver where each file ends.
 
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
 use aho_corasick::{AhoCorasick, Anchored, Input as AcInput, MatchKind, StartKind};
 use indicatif::ProgressBar;
 
+use super::avistream::{self, OrphanStream};
 use super::{Carved, Carver, EndMethod, HEAD_LEN, Input};
 use crate::cli::TypeFilter;
 use crate::filetype::{Category, category_of_ext};
@@ -134,23 +138,38 @@ impl Matcher {
     }
 }
 
-/// Pass 1: finds candidate headers inside the given absolute `[start, end)` ranges.
+/// Result of pass 1.
+#[derive(Debug, Default)]
+pub struct Pass1 {
+    /// Confirmed headers, sorted by offset.
+    pub candidates: Vec<Candidate>,
+    /// Unaligned positions where headerless AVI `movi` chunks were seen
+    /// (at most one per [`avistream::HINT_SPACING`]), sorted.
+    pub stream_hints: Vec<u64>,
+}
+
+/// Pass 1: finds candidate headers inside the given absolute `[start, end)`
+/// ranges, and (when `stream_hints` is set) hints of headerless AVI streams.
 pub fn find_candidates(
     src: &dyn Source,
     ranges: &[(u64, u64)],
     carvers: &[Box<dyn Carver>],
     filter: &TypeFilter,
+    stream_hints: bool,
     progress: &ProgressBar,
-) -> Vec<Candidate> {
+) -> Pass1 {
     let enabled: Vec<bool> = carvers
         .iter()
         .map(|c| c.categories().iter().any(|&cat| filter.accepts(Some(cat))))
         .collect();
     let matcher = Matcher::new(carvers, &enabled);
+    let stream_ac = AhoCorasick::new(avistream::hint_patterns())
+        .expect("static patterns form a valid automaton");
     let extra = HEAD_LEN.max(matcher.max_extent);
     let mut buf = vec![0u8; CHUNK + extra];
-    let mut found = Vec::new();
+    let mut out = Pass1::default();
     let mut hits = Vec::new();
+    let mut next_hint = 0u64;
     for &(rs, re) in ranges {
         let mut pos = rs.div_ceil(ALIGN) * ALIGN;
         while pos < re {
@@ -170,7 +189,7 @@ pub fn find_candidates(
                     if let Some(ext) = carvers[ci].identify(head)
                         && filter.accepts(category_of_ext(ext))
                     {
-                        found.push(Candidate {
+                        out.candidates.push(Candidate {
                             offset: pos + i as u64,
                             carver: ci,
                             ext,
@@ -180,27 +199,101 @@ pub fn find_candidates(
                 }
                 i += ALIGN as usize;
             }
+            if stream_hints {
+                for m in stream_ac.find_iter(&buf[..scan_end]) {
+                    let abs = pos + m.start() as u64;
+                    if abs >= next_hint && avistream::is_hint(&buf[..n], m.start()) {
+                        out.stream_hints.push(abs);
+                        next_hint = (abs / avistream::HINT_SPACING + 1) * avistream::HINT_SPACING;
+                    }
+                }
+            }
             progress.inc(scan_len as u64);
             pos += scan_len as u64;
         }
     }
-    found.sort_by_key(|c| c.offset);
-    found.dedup_by_key(|c| c.offset);
-    found
+    out.candidates.sort_by_key(|c| c.offset);
+    out.candidates.dedup_by_key(|c| c.offset);
+    out
 }
 
-/// Pass 2: determines the extent of every candidate and drops those that
-/// start inside an already-carved file.
+/// Result of pass 2.
+#[derive(Debug, Default)]
+pub struct Resolved {
+    /// Files carved from a recognised header.
+    pub files: Vec<CarvedFile>,
+    /// Headerless AVI streams to rebuild.
+    pub streams: Vec<OrphanStream>,
+}
+
+/// Walks the stream at hint `h` (within the scan range holding it) and cuts
+/// it before the first header in `later` that is not the payload of one of
+/// its own chunks (a JPEG frame of an MJPEG stream is not a separate file).
+fn stream_at(
+    input: &Input,
+    h: u64,
+    ranges: &[(u64, u64)],
+    later: &[Candidate],
+) -> Option<(OrphanStream, u64)> {
+    let &(_, range_end) = ranges.iter().find(|(s, e)| h >= *s && h < *e)?;
+    let mut s = avistream::walk(input, h, range_end)?;
+    for c in later.iter().take_while(|c| c.offset < s.end) {
+        let embedded = c.offset >= 8
+            && s.chunks
+                .binary_search_by_key(&(c.offset - 8), |k| k.offset)
+                .is_ok();
+        if !embedded {
+            s.chunks
+                .retain(|k| k.offset + 8 + u64::from(k.size) <= c.offset);
+            s.end = s.chunks.last().map_or(h, |k| {
+                k.offset + 8 + u64::from(k.size) + u64::from(k.size & 1)
+            });
+            break;
+        }
+    }
+    (s.video_frames() >= avistream::MIN_VIDEO_FRAMES).then_some((s, range_end))
+}
+
+/// Pass 2: visits the candidates and the stream hints in offset order,
+/// determines the extent of each file, and drops anything that starts inside
+/// a file or stream already found.
 pub fn resolve(
     input: &Input,
     candidates: &[Candidate],
+    stream_hints: &[u64],
+    ranges: &[(u64, u64)],
     carvers: &[Box<dyn Carver>],
     caps: &SizeCaps,
     progress: &ProgressBar,
-) -> Vec<CarvedFile> {
-    let mut out = Vec::new();
+) -> Resolved {
+    let mut out = Resolved::default();
+    let mut hints: BinaryHeap<Reverse<u64>> = stream_hints.iter().map(|&h| Reverse(h)).collect();
     let mut carved_until = 0u64;
-    for (i, cand) in candidates.iter().enumerate() {
+    let mut i = 0usize;
+    loop {
+        let next_hint = hints.peek().map(|r| r.0);
+        let take_hint = match (candidates.get(i), next_hint) {
+            (_, None) => false,
+            (None, Some(_)) => true,
+            (Some(c), Some(h)) => h < c.offset,
+        };
+        if take_hint {
+            let Some(Reverse(h)) = hints.pop() else { break };
+            if h < carved_until {
+                continue;
+            }
+            if let Some((s, range_end)) = stream_at(input, h, ranges, &candidates[i..]) {
+                carved_until = s.end;
+                // Another stream may start in the same MiB, which pass 1 does not report.
+                if let Some(n) = avistream::find_hint(input, s.end, range_end) {
+                    hints.push(Reverse(n));
+                }
+                out.streams.push(s);
+            }
+            continue;
+        }
+        let Some(cand) = candidates.get(i) else { break };
+        i += 1;
         progress.inc(1);
         if cand.offset < carved_until {
             continue;
@@ -215,7 +308,7 @@ pub fn resolve(
         };
         c.len = c.len.min(limit - cand.offset);
         if c.end == EndMethod::NextHeader {
-            let next = candidates[i + 1..]
+            let next = candidates[i..]
                 .iter()
                 .find(|n| n.offset > cand.offset)
                 .map(|n| n.offset);
@@ -231,7 +324,7 @@ pub fn resolve(
             continue;
         }
         carved_until = cand.offset + c.len;
-        out.push(CarvedFile {
+        out.files.push(CarvedFile {
             offset: cand.offset,
             carved: c,
             format: carvers[cand.carver].name(),
@@ -271,7 +364,8 @@ mod tests {
         let carvers = all_carvers();
         let pb = ProgressBar::hidden();
         let filter = TypeFilter::default();
-        let cands = find_candidates(&src, &[(0, src.size())], &carvers, &filter, &pb);
+        let cands =
+            find_candidates(&src, &[(0, src.size())], &carvers, &filter, false, &pb).candidates;
         let offs: Vec<u64> = cands.iter().map(|c| c.offset).collect();
         assert_eq!(offs, vec![1024, 16384, 16384 + 4096]);
         let caps = SizeCaps {
@@ -279,7 +373,7 @@ mod tests {
             video: 1 << 20,
             audio: 1 << 20,
         };
-        let files = resolve(&Input::new(&src), &cands, &carvers, &caps, &pb);
+        let files = resolve(&Input::new(&src), &cands, &[], &[], &carvers, &caps, &pb).files;
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].offset, 1024);
         assert_eq!(files[0].carved.len, j.len() as u64);
@@ -301,14 +395,103 @@ mod tests {
             &[(4096, 16384)],
             &carvers,
             &TypeFilter::default(),
+            false,
             &pb,
-        );
+        )
+        .candidates;
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].offset, 8192);
         let video_only = TypeFilter {
             types: vec![Category::Video],
         };
-        assert!(find_candidates(&src, &[(0, 16384)], &carvers, &video_only, &pb).is_empty());
+        let p = find_candidates(&src, &[(0, 16384)], &carvers, &video_only, false, &pb);
+        assert!(p.candidates.is_empty());
+    }
+
+    #[test]
+    fn finds_unaligned_stream_hints_once_per_mib() {
+        let mut img: Vec<u8> = (0..1234u32).map(|i| (i % 200) as u8).collect();
+        for i in 0..3000u32 {
+            img.extend_from_slice(if i % 4 == 3 { b"01wb" } else { b"00dc" });
+            img.extend_from_slice(&992u32.to_le_bytes());
+            img.extend((0..992u32).map(|k| (k * 7 + i) as u8 | 1));
+        }
+        let src = MemSource(img);
+        let carvers = all_carvers();
+        let pb = ProgressBar::hidden();
+        let all = TypeFilter::default();
+        let p = find_candidates(&src, &[(0, src.size())], &carvers, &all, true, &pb);
+        assert_eq!(p.stream_hints.first(), Some(&1234));
+        assert!(
+            p.stream_hints.len() >= 2 && p.stream_hints.len() <= 4,
+            "{:?}",
+            p.stream_hints
+        );
+        assert!(p.stream_hints.windows(2).all(|w| w[1] - w[0] >= 1 << 19));
+        let off = find_candidates(&src, &[(0, src.size())], &carvers, &all, false, &pb);
+        assert!(off.stream_hints.is_empty());
+    }
+
+    /// A frame that happens to start on a 512-byte boundary belongs to the
+    /// stream, but a real file whose header lies inside the stream's last
+    /// chunk (the chunk ran into it) cuts the stream and is carved itself.
+    #[test]
+    fn streams_own_their_frames_but_not_foreign_files() {
+        let j = tiny_jpeg();
+        let mut img: Vec<u8> = vec![0x33; 1000];
+        let mut payload_starts = Vec::new();
+        for _ in 0..40 {
+            img.extend_from_slice(b"00dc");
+            img.extend_from_slice(&(j.len() as u32).to_le_bytes());
+            payload_starts.push(img.len());
+            img.extend_from_slice(&j);
+        }
+        // Pad so the next frame's payload is 512-aligned.
+        let pad = (512 - (img.len() + 8 + 8) % 512) % 512;
+        img.extend_from_slice(b"JUNK");
+        img.extend_from_slice(&(pad as u32).to_le_bytes());
+        img.resize(img.len() + pad, 0);
+        img.extend_from_slice(b"00dc");
+        img.extend_from_slice(&(j.len() as u32).to_le_bytes());
+        let aligned_frame = img.len();
+        assert_eq!(aligned_frame % 512, 0);
+        img.extend_from_slice(&j);
+        // A last chunk that claims 4 KiB, with a foreign photo inside it.
+        img.extend_from_slice(b"00dc");
+        img.extend_from_slice(&4096u32.to_le_bytes());
+        let foreign = img.len().div_ceil(512) * 512 + 512;
+        img.resize(foreign, 0x44);
+        img.extend_from_slice(&j);
+        img.resize(foreign + 8192, 0);
+        let src = MemSource(img);
+        let carvers = all_carvers();
+        let pb = ProgressBar::hidden();
+        let ranges = [(0, src.size())];
+        let all = TypeFilter::default();
+        let p = find_candidates(&src, &ranges, &carvers, &all, true, &pb);
+        let offs: Vec<u64> = p.candidates.iter().map(|c| c.offset).collect();
+        assert_eq!(offs, vec![aligned_frame as u64, foreign as u64]);
+        let caps = SizeCaps {
+            photo: 1 << 20,
+            video: 1 << 20,
+            audio: 1 << 20,
+        };
+        let r = resolve(
+            &Input::new(&src),
+            &p.candidates,
+            &p.stream_hints,
+            &ranges,
+            &carvers,
+            &caps,
+            &pb,
+        );
+        assert_eq!(r.files.len(), 1, "{:?}", r.files);
+        assert_eq!(r.files[0].offset, foreign as u64);
+        assert_eq!(r.streams.len(), 1);
+        let s = &r.streams[0];
+        assert_eq!(s.video_frames(), 41);
+        assert!(s.end <= foreign as u64);
+        assert_eq!(s.start, 1000);
     }
 
     #[test]

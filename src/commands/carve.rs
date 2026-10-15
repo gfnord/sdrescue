@@ -6,11 +6,13 @@ use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 
 use super::Outcome;
+use crate::carve::avistream::{self, OrphanStream, Template};
 use crate::carve::engine::{SizeCaps, find_candidates, resolve};
 use crate::carve::{Input, all_carvers};
 use crate::cli::{CarveArgs, GlobalOpts};
 use crate::device::{ensure_output_not_on_source, open_for_analysis};
 use crate::fat::FatVolume;
+use crate::filetype::Category;
 use crate::output::create_unique;
 use crate::partition::{FsKind, locate};
 use crate::source::Source;
@@ -102,12 +104,23 @@ pub fn run(a: &CarveArgs, g: &GlobalOpts) -> Result<Outcome> {
             ""
         }
     );
+    let reference = a
+        .avi_reference
+        .as_deref()
+        .map(avistream::template_from_reference)
+        .transpose()?;
     let carvers = all_carvers();
     let pb = bytes_bar(scan_total, "searching");
-    let candidates = find_candidates(src, &ranges, &carvers, &a.filter, &pb);
+    let want_streams = a.filter.accepts(Some(Category::Video));
+    let pass1 = find_candidates(src, &ranges, &carvers, &a.filter, want_streams, &pb);
+    let candidates = pass1.candidates.as_slice();
     pb.finish_and_clear();
     if g.verbose {
-        eprintln!("{} candidate header(s)", candidates.len());
+        eprintln!(
+            "{} candidate header(s), {} AVI stream hint(s)",
+            candidates.len(),
+            pass1.stream_hints.len()
+        );
     }
     let caps = SizeCaps {
         photo: a.max_photo,
@@ -116,7 +129,16 @@ pub fn run(a: &CarveArgs, g: &GlobalOpts) -> Result<Outcome> {
     };
     let input = Input::new(src);
     let pb = count_bar(candidates.len() as u64, "analysing");
-    let files = resolve(&input, &candidates, &carvers, &caps, &pb);
+    let resolved = resolve(
+        &input,
+        candidates,
+        &pass1.stream_hints,
+        &ranges,
+        &carvers,
+        &caps,
+        &pb,
+    );
+    let (files, streams) = (resolved.files, resolved.streams);
     pb.finish_and_clear();
 
     std::fs::create_dir_all(&a.out)
@@ -184,7 +206,6 @@ pub fn run(a: &CarveArgs, g: &GlobalOpts) -> Result<Outcome> {
         ])?;
     }
     pb.finish_and_clear();
-    report.flush()?;
     let mut by_ext: Vec<(&str, usize)> = Vec::new();
     for f in &files {
         match by_ext.iter_mut().find(|(e, _)| *e == f.carved.ext) {
@@ -208,10 +229,93 @@ pub fn run(a: &CarveArgs, g: &GlobalOpts) -> Result<Outcome> {
     if notes > 0 {
         println!("{notes} file(s) have notes in the report (for example videos that need repair).");
     }
+    let rebuilt = rebuild_streams(&input, &streams, reference.as_ref(), a, &mut report)?;
+    report.flush()?;
     println!("Report: {}", report_path.display());
-    Ok(if written == 0 {
+    Ok(if written + rebuilt == 0 {
         Outcome::NothingFound
     } else {
         Outcome::Done
     })
+}
+
+/// Rebuilds every headerless AVI stream into `<OUT>/avi/`. Returns how many files were written.
+fn rebuild_streams(
+    input: &Input,
+    streams: &[OrphanStream],
+    reference: Option<&Template>,
+    a: &CarveArgs,
+    report: &mut csv::Writer<std::fs::File>,
+) -> Result<usize> {
+    let mut written = 0usize;
+    for s in streams {
+        let frames = s.video_frames();
+        let template = match reference {
+            Some(t) => Ok(t.clone()),
+            None => avistream::infer_template(input, s, a.avi_fps),
+        };
+        let template = match template {
+            Ok(t) => t,
+            Err(why) => {
+                println!(
+                    "Found a headerless AVI stream at offset {} ({frames} frames) but cannot rebuild it: {why}",
+                    s.start
+                );
+                report.write_record([
+                    s.start.to_string(),
+                    (s.end - s.start).to_string(),
+                    "avi".into(),
+                    "rebuilt".into(),
+                    "no".into(),
+                    String::new(),
+                    format!("headerless AVI stream, not rebuilt: {why}"),
+                ])?;
+                continue;
+            }
+        };
+        let max_part = avistream::MAX_PART_BYTES.min(a.max_video.max(1 << 20));
+        let parts = avistream::split_parts(&s.chunks, max_part);
+        let many = parts.len() > 1;
+        for (k, part) in parts.iter().enumerate() {
+            let Some(first) = part.first() else { continue };
+            let suffix = if many {
+                format!("-rebuilt-part{}", k + 1)
+            } else {
+                "-rebuilt".into()
+            };
+            let dest = a
+                .out
+                .join("avi")
+                .join(format!("f{:09}{suffix}.avi", s.start));
+            let (file, used) = create_unique(&dest)?;
+            let mut w = BufWriter::new(file);
+            let n = avistream::write_avi(input, part, &template, &mut w)
+                .and_then(|n| w.flush().map(|_| n).map_err(Into::into))
+                .with_context(|| format!("cannot write {}", used.display()))?;
+            written += 1;
+            let part_frames = part
+                .iter()
+                .filter(|c| c.id[2..] == *b"dc" || c.id[2..] == *b"db")
+                .count();
+            let rel = used.strip_prefix(&a.out).unwrap_or(&used);
+            println!(
+                "Rebuilt a video whose header was lost: {} ({part_frames} frames, {})",
+                rel.display(),
+                template.description
+            );
+            report.write_record([
+                first.offset.to_string(),
+                n.to_string(),
+                "avi".into(),
+                "rebuilt".into(),
+                "no".into(),
+                rel.to_string_lossy().into_owned(),
+                format!(
+                    "rebuilt from a headerless AVI stream (the original header was overwritten): {part_frames} frames, {}",
+                    template.description
+                ),
+            ])?;
+        }
+    }
+    Ok(written)
 }

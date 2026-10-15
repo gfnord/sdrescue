@@ -254,7 +254,7 @@ fn mbr_partition_table_in_front_of_the_filesystem() {
     );
 }
 
-const MEDIA: [&str; 8] = [
+const MEDIA: [&str; 9] = [
     "photo.jpg",
     "photo2.jpg",
     "image.png",
@@ -263,6 +263,7 @@ const MEDIA: [&str; 8] = [
     "song.mp3",
     "voice.ogg",
     "clip.mp4",
+    "clip.avi",
 ];
 
 #[test]
@@ -322,6 +323,122 @@ fn quick_reformat_list_finds_nothing_but_carve_recovers() {
         .collect();
     kinds.sort();
     assert_eq!(kinds, ["mp3", "ogg", "wav"]);
+}
+
+/// `(id, payload)` of every chunk inside an AVI's `LIST movi`.
+fn movi_chunks(avi: &[u8]) -> Vec<([u8; 4], Vec<u8>)> {
+    let le = |o: usize| u32::from_le_bytes(avi[o..o + 4].try_into().unwrap()) as usize;
+    let mut p = 12;
+    while &avi[p..p + 4] != b"LIST" || &avi[p + 8..p + 12] != b"movi" {
+        p += 8 + le(p + 4) + (le(p + 4) & 1);
+    }
+    let end = p + 8 + le(p + 4);
+    p += 12;
+    let mut out = Vec::new();
+    while p < end {
+        let s = le(p + 4);
+        out.push((
+            avi[p..p + 4].try_into().unwrap(),
+            avi[p + 8..p + 8 + s].to_vec(),
+        ));
+        p += 8 + s + (s & 1);
+    }
+    out
+}
+
+/// A deleted AVI whose first clusters (with the header) were reused by a new photo.
+fn avi_with_overwritten_header(name: &str) -> std::path::PathBuf {
+    let w = workdir(name);
+    let img = w.join("card.img");
+    let i = img.to_str().unwrap();
+    mkfs(&img, 16, 16 * 1024);
+    mcopy(i, &fixture("clip.avi"), "MOV0001.AVI");
+    tool("mdel", &["-i", i, "::/MOV0001.AVI"]);
+    mcopy(i, &fixture("photo2.jpg"), "NEW.JPG");
+    w
+}
+
+#[test]
+fn avi_whose_header_was_overwritten_is_rebuilt() {
+    if !have_fat_tools() {
+        return;
+    }
+    let w = avi_with_overwritten_header("avirebuild");
+    // The new photo reused both the directory entry and the first clusters
+    // (with the AVI header): `list` and the RIFF carver can't help.
+    let (rc, rows) = list_json(&w, "card.img", &[]);
+    assert_eq!(rc, 2, "{rows:#?}");
+    let o = sdrescue(
+        &w,
+        &[
+            "carve",
+            "card.img",
+            "--out",
+            "c",
+            "--type",
+            "video",
+            "--avi-fps",
+            "10",
+        ],
+    );
+    let out = text(&o);
+    assert_eq!(code(&o), 0, "{out}");
+    let rebuilt: Vec<_> = fs::read_dir(w.join("c/avi"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(rebuilt.len(), 1, "{rebuilt:?}");
+    let name = rebuilt[0]
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert!(name.ends_with("-rebuilt.avi"), "{name}");
+    let avi = fs::read(&rebuilt[0]).unwrap();
+
+    // The surviving chunks are exactly the end of the original stream.
+    let original: Vec<_> = movi_chunks(&fs::read(fixture("clip.avi")).unwrap())
+        .into_iter()
+        .filter(|(id, _)| id != b"JUNK")
+        .collect();
+    let got = movi_chunks(&avi);
+    let frames = got.iter().filter(|(id, _)| id == b"00dc").count();
+    assert!((16..24).contains(&frames), "{frames} frames");
+    assert_eq!(got[..], original[original.len() - got.len()..]);
+
+    // Inferred header: 10 fps as requested, audio deduced as 8 kHz mono.
+    let le = |o: usize| u32::from_le_bytes(avi[o..o + 4].try_into().unwrap());
+    let avih = avi.windows(4).position(|x| x == b"avih").unwrap() + 8;
+    assert_eq!(le(avih), 100_000);
+    assert_eq!(le(avih + 16) as usize, frames);
+    let report = fs::read_to_string(w.join("c/report.csv")).unwrap();
+    assert!(report.contains(",avi,rebuilt,no,"), "{report}");
+    assert!(
+        report.contains("MJPEG 96x72, 10 fps (assumed), PCM 8000 Hz mono (inferred)"),
+        "{report}"
+    );
+
+    // With a reference video its header is used instead.
+    let o = sdrescue(
+        &w,
+        &[
+            "carve",
+            "card.img",
+            "--out",
+            "r",
+            "--avi-reference",
+            fixture("clip.avi").to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code(&o), 0, "{}", text(&o));
+    let report = fs::read_to_string(w.join("r/report.csv")).unwrap();
+    assert!(report.contains("header from"), "{report}");
+    let avi2 = fs::read(w.join("r/avi").join(&name)).unwrap();
+    assert_eq!(movi_chunks(&avi2), got);
+
+    // Photos only: no video rebuilding.
+    let o = sdrescue(&w, &["carve", "card.img", "--out", "p", "--type", "photo"]);
+    assert!(!w.join("p/avi").exists(), "{}", text(&o));
 }
 
 #[test]

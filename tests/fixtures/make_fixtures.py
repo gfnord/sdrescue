@@ -167,9 +167,56 @@ def synth_mp4():
         f.write(ftyp + moov + mdat)
 
 
+def riff_chunk(tag, data):
+    return tag + struct.pack("<I", len(data)) + data + (b"\0" if len(data) & 1 else b"")
+
+
+def riff_list(kind, data):
+    return riff_chunk(b"LIST", kind + data)
+
+
+def make_avi():
+    """MJPEG + 8 kHz mono PCM AVI, 10 fps, like cheap cameras and dashcams write."""
+    w, h, fps, frames, rate = 96, 72, 10, 24, 8000
+    jpegs = []
+    for i in range(frames):
+        b = io.BytesIO()
+        picture(w, h, 100 + i).save(b, "JPEG", quality=60)
+        jpegs.append(b.getvalue())
+    per_frame = rate * 2 // fps
+    audio = [
+        b"".join(struct.pack("<h", int(6000 * math.sin(2 * math.pi * 330 * (i * per_frame // 2 + k) / rate)))
+                 for k in range(per_frame // 2))
+        for i in range(frames)
+    ]
+    avih = struct.pack("<14I", 1000000 // fps, 0, 0, 0x10, frames, 0, 2, 1 << 16, w, h, 0, 0, 0, 0)
+    strh_v = b"vidsMJPG" + struct.pack("<IHHIIIIIIIIhhhh", 0, 0, 0, 0, 1, fps, 0, frames, 1 << 16, 0xFFFFFFFF, 0, 0, 0, w, h)
+    strf_v = struct.pack("<IiiHH4sIiiII", 40, w, h, 1, 24, b"MJPG", w * h * 3, 0, 0, 0, 0)
+    strh_a = b"auds\0\0\0\0" + struct.pack("<IHHIIIIIIIIhhhh", 0, 0, 0, 0, 2, rate * 2, 0, frames * per_frame // 2, per_frame, 0xFFFFFFFF, 2, 0, 0, 0, 0)
+    strf_a = struct.pack("<HHIIHHH", 1, 1, rate, rate * 2, 2, 16, 0)
+    hdrl = riff_list(
+        b"hdrl",
+        riff_chunk(b"avih", avih)
+        + riff_list(b"strl", riff_chunk(b"strh", strh_v) + riff_chunk(b"strf", strf_v))
+        + riff_list(b"strl", riff_chunk(b"strh", strh_a) + riff_chunk(b"strf", strf_a)),
+    )
+    movi = b"movi"
+    idx = b""
+    for i in range(frames):
+        for tag, data in ((b"00dc", jpegs[i]), (b"01wb", audio[i])):
+            idx += tag + struct.pack("<III", 0x10 if tag == b"00dc" else 0, len(movi), len(data))
+            movi += riff_chunk(tag, data)
+        if i == 11:
+            movi += riff_chunk(b"JUNK", bytes(100))
+    body = b"AVI " + hdrl + riff_chunk(b"LIST", movi) + riff_chunk(b"idx1", idx)
+    with open(os.path.join(OUT, "clip.avi"), "wb") as f:
+        f.write(b"RIFF" + struct.pack("<I", len(body)) + body)
+
+
 def main():
     make_images()
     make_wav()
+    make_avi()
     ff = ffmpeg_path()
     if ff:
         make_with_ffmpeg(ff)

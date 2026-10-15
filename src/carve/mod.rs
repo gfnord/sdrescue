@@ -3,7 +3,9 @@
 //! Each format lives in its own module and implements [`Carver`]. The
 //! [`engine`] finds candidate headers at 512-byte-aligned offsets (pass 1)
 //! and then asks the matching carver where each file ends (pass 2).
+//! [`avistream`] rebuilds AVI videos whose header was overwritten.
 
+pub mod avistream;
 pub mod engine;
 pub mod reader;
 

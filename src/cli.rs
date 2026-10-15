@@ -126,8 +126,12 @@ Examples:
   sdrescue carve card.img --out carved --type video
   sdrescue carve card.img --out carved --all-space
   sdrescue carve card.img --out carved --max-video 8G
+  sdrescue carve card.img --out carved --avi-reference good_clip.avi
 
-Files are saved as <OUT>/<ext>/f<byte offset>.<ext> and listed in <OUT>/report.csv.")]
+Files are saved as <OUT>/<ext>/f<byte offset>.<ext> and listed in <OUT>/report.csv.
+AVI videos whose header was overwritten (common after a reformat) are rebuilt as
+<OUT>/avi/f<byte offset>-rebuilt.avi. Without --avi-reference, MJPEG video is
+assumed to run at --avi-fps and audio is assumed to be 16-bit PCM.")]
     Carve(CarveArgs),
 }
 
@@ -205,6 +209,15 @@ pub struct CarveArgs {
     /// Maximum size of a carved audio file.
     #[arg(long, value_name = "SIZE", value_parser = parse_size, default_value = "1G")]
     pub max_audio: u64,
+    /// Frame rate assumed for rebuilt AVI videos whose header was lost
+    /// (ignored with --avi-reference).
+    #[arg(long, value_name = "FPS", default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..=240))]
+    pub avi_fps: u32,
+    /// A working AVI recorded by the same camera with the same settings; its
+    /// header (codec, frame size, frame rate, audio format) is used to rebuild
+    /// AVI videos whose header was lost.
+    #[arg(long, value_name = "FILE")]
+    pub avi_reference: Option<PathBuf>,
 }
 
 #[cfg(test)]
