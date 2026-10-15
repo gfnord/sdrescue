@@ -8,6 +8,7 @@ pub mod engine;
 pub mod reader;
 
 mod gif;
+mod isobmff;
 mod jpeg;
 mod png;
 mod riff;
@@ -144,6 +145,7 @@ pub fn all_carvers() -> Vec<Box<dyn Carver>> {
         Box::new(jpeg::Jpeg),
         Box::new(png::Png),
         Box::new(gif::Gif),
+        Box::new(isobmff::IsoBmff),
         Box::new(riff::Riff),
     ]
 }
