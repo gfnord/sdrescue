@@ -29,3 +29,6 @@ rustc-ice-*.txt
 /tests/output/
 /recovered/
 /carved/
+
+# Wrangler (Cloudflare Pages deploy) local state
+.wrangler/
