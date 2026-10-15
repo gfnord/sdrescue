@@ -4,7 +4,9 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-15
+
+First stable release, tested on a real camera card.
 
 ### Added
 
@@ -23,7 +25,7 @@ All notable changes to this project are documented here. The format is based on
 
 ## [0.1.0] - 2026-10-15
 
-First release.
+First version (not published as a release).
 
 ### Added
 
@@ -57,3 +59,5 @@ First release.
   - output on the source device or volume is refused
   - existing files are never overwritten
 - Exit codes: 0 success, 1 error, 2 nothing found.
+
+[1.0.0]: https://github.com/gfnord/sdrescue/releases/tag/v1.0.0

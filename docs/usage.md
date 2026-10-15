@@ -128,7 +128,7 @@ The sidecar log `card.img.log` looks like this (sample values; this card had one
 bad 4 KB block):
 
 ```
-sdrescue 0.1.0 image log
+sdrescue 1.0.0 image log
 source: \\.\PhysicalDrive2
 output: card.img
 size: 15931539456 bytes (15 GB)
