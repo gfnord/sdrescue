@@ -10,6 +10,7 @@
 //! - [`imaging`]: byte-for-byte imaging with bad-sector handling.
 //! - [`commands`]: the subcommands, driven by [`cli`].
 
+pub mod carve;
 pub mod cli;
 pub mod commands;
 pub mod device;
